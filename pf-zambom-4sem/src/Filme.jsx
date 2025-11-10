@@ -16,9 +16,9 @@ export default function FilmesApp() {
   const [nota, setNota] = useState("");
   const [diretor, setDiretor] = useState("");
 
-  const { user, isAuthenticated, getAccessTokenSilently } = useAuth0();
+  const { user, isAuthenticated, getAccessTokenSilently, loginWithRedirect, logout } = useAuth0();
 
-
+ 
   useEffect(() => {
     const fetchToken = async () => {
       try {
@@ -28,24 +28,15 @@ export default function FilmesApp() {
         console.error("Erro ao buscar token:", e);
       }
     };
-
     if (isAuthenticated) fetchToken();
   }, [isAuthenticated, getAccessTokenSilently]);
 
-  if (!isAuthenticated) {
-    return <LoginButton />;
-  }
 
-  
   async function fetchFilmes() {
     setLoading(true);
     setError(null);
     try {
-      const res = await fetch(`${BASE_URL}/filmes`, {
-        headers: {
-          Authorization: `Bearer ${token}`,
-        },
-      });
+      const res = await fetch(`${BASE_URL}/filmes`);
       if (!res.ok) throw new Error(`Erro ao carregar: ${res.status}`);
       const data = await res.json();
       setFilmes(Array.isArray(data) ? data : []);
@@ -56,33 +47,27 @@ export default function FilmesApp() {
     }
   }
 
- 
+  useEffect(() => {
+    fetchFilmes();
+  }, []);
+
+
   async function handleCreate(e) {
     e.preventDefault();
     setError(null);
 
-    const dto = {
-      nome,
-      descricao,
-      nota,
-      diretor,
-    };
+    const dto = { nome, descricao, nota, diretor };
 
     try {
       const res = await fetch(`${BASE_URL}/filmes`, {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
-          Authorization: `Bearer ${token}`,
         },
         body: JSON.stringify(dto),
       });
 
-      if (!res.ok) {
-        const text = await res.text();
-        throw new Error(`Erro ao criar: ${res.status} ${text}`);
-      }
-
+      if (!res.ok) throw new Error(`Erro ao criar: ${res.status}`);
       const created = await res.json();
       setFilmes((prev) => [created, ...prev]);
       setNome("");
@@ -94,9 +79,15 @@ export default function FilmesApp() {
     }
   }
 
-
   async function handleDelete(id) {
+    if (!isAuthenticated) {
+      alert("Você precisa estar logada para deletar um filme.");
+      await loginWithRedirect();
+      return;
+    }
+
     try {
+      const token = await getAccessTokenSilently();
       const res = await fetch(`${BASE_URL}/filmes/${id}`, {
         method: "DELETE",
         headers: {
@@ -112,18 +103,24 @@ export default function FilmesApp() {
 
   return (
     <div className="min-h-screen p-6 bg-gray-50 font-sans">
-      {/* Usuário autenticado */}
-      <div>
-        <img src={user.picture} alt={user.name} className="w-16 rounded-full" />
-        <h2>{user.name}</h2>
-        <p>{user.email}</p>
-        <LogoutButton />
-      </div>
+      {/* Header com login/logout */}
+      <header className="flex justify-between items-center mb-4">
+        <h1 className="text-2xl font-bold">🎬 Filmes</h1>
+        <div>
+          {isAuthenticated ? (
+            <>
+              <span className="mr-2">Olá, {user.name} 👋</span>
+              <LogoutButton />
+            </>
+          ) : (
+            <LoginButton />
+          )}
+        </div>
+      </header>
 
       <div className="max-w-3xl mx-auto bg-white rounded-2xl shadow p-6">
-        <h1 className="text-2xl font-bold mb-4">🎬 Filmes — criação e listagem</h1>
+        <h2 className="text-xl font-semibold mb-4">Cadastrar novo filme</h2>
 
-        {/* Formulário */}
         <form onSubmit={handleCreate} className="space-y-3 mb-6">
           <input
             value={nome}
@@ -166,7 +163,6 @@ export default function FilmesApp() {
 
         {error && <div className="mb-4 text-red-600">{error}</div>}
 
-        {/* Lista de filmes */}
         <div>
           <h2 className="text-xl font-semibold mb-2">Lista de Filmes</h2>
           {loading ? (
@@ -176,7 +172,7 @@ export default function FilmesApp() {
           ) : (
             <ul className="space-y-3">
               {filmes.map((f) => (
-                <li key={f.id} className="p-3 border rounded flex justify-between">
+                <li key={f.id} className="p-3 border rounded flex justify-between items-center">
                   <div>
                     <div className="font-semibold">{f.nome}</div>
                     {f.descricao && (
@@ -185,12 +181,14 @@ export default function FilmesApp() {
                     <div className="text-sm">🎬 Diretor: {f.diretor}</div>
                     <div className="text-sm">⭐ Nota: {f.nota}</div>
                   </div>
-                  <button
-                    onClick={() => handleDelete(f.id)}
-                    className="px-3 py-1 bg-red-500 text-white rounded"
-                  >
-                    Deletar
-                  </button>
+                  {isAuthenticated && (
+                    <button
+                      onClick={() => handleDelete(f.id)}
+                      className="px-3 py-1 bg-red-500 text-white rounded"
+                    >
+                      Deletar
+                    </button>
+                  )}
                 </li>
               ))}
             </ul>
